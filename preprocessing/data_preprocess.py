@@ -6,3 +6,4 @@ class DataColumnCreation:
         self.data[col_name] = calculation_func(self.data)
         return self.data
     
+    
