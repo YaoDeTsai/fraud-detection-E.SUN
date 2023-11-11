@@ -22,4 +22,4 @@ class essemble:
     def vote(self, list):
 
 333333
-125
+'done'
