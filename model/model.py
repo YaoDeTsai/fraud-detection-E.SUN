@@ -10,6 +10,7 @@ class Model:
     def __init__(self, data):
         self.data = data
 
+
     def model1():
         model_prep.one_hot()
 
@@ -21,5 +22,4 @@ class essemble:
     def vote(self, list):
 
 
-
-hihihihi
+123456
