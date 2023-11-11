@@ -21,5 +21,10 @@ class Model:
 class essemble:
     def vote(self, list):
 
+<<<<<<< HEAD
 333333
 125
+=======
+55555
+1111
+>>>>>>> Anson
