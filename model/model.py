@@ -21,3 +21,8 @@ class Model:
 class essemble:
     def vote(self, list):
 
+<<<<<<< HEAD
+=======
+333333
+125
+>>>>>>> b146dfa6bf83b057a8d596ac1c7a982f30a70654
