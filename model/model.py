@@ -20,6 +20,3 @@ class Model:
 
 class essemble:
     def vote(self, list):
-
-55555
-1111
