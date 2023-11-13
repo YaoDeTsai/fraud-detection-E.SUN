@@ -50,6 +50,8 @@ class DataCleaning:
         # select the categorical
         cat_col = data_info[data_info["資料格式"] == "類別型"]["訓練資料欄位名稱"]
         cat_col = cat_col[cat_col != target_col]
+        # drop the label
+        cat_col = cat_col[cat_col != "label"]
         cat_col = cat_col[cat_col.isin(train_rf.columns)]
 
         # replace categorical variables with frequency encoding
@@ -58,15 +60,15 @@ class DataCleaning:
             frequency_map = train_rf[column].value_counts(normalize=True).to_dict()
             df_freq_encoded[column] = train_rf[column].map(frequency_map)
 
-        # split the train test by target_co isna
+        # split the train test by target_col isna
         target_col_train = df_freq_encoded[df_freq_encoded[target_col].notna()]
         target_col_test = df_freq_encoded[df_freq_encoded[target_col].isna()]
 
-        # subset the data by random with XX% of sample size
-        target_col_train = target_col_train.sample(frac= sample_frac, random_state=1111)
-
         # select the train by contribute to XX% of the counts
         target_col_train = target_col_train[target_col_train[target_col].isin(DataCleaning.proportionXX_target_col_count(self, target_col, prop))]
+
+        # subset the data by random with XX% of sample size
+        target_col_train = target_col_train.sample(frac= sample_frac, random_state=1111)
 
         # split the X and y for train and test
         X_train = target_col_train.drop(target_col, axis=1)
@@ -74,8 +76,8 @@ class DataCleaning:
         X_test = target_col_test.drop(target_col, axis=1)
 
         # handle missing values
-        X_train.fillna(-1.0, inplace=True)
-        X_test.fillna(-1.0, inplace=True)
+        X_train.fillna(-2.0, inplace=True)
+        X_test.fillna(-2.0, inplace=True)
 
         # standardize the features
         scaler = StandardScaler()
