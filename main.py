@@ -16,7 +16,7 @@ df = pd.concat([train,public])
 data_info = pd.read_excel("datasets/31_資料欄位說明.xlsx")
 
 # missing data cleaning class
-cleaner = DataCleaning(train, data_info)
+cleaner = DataCleaning(df, data_info)
 
 # fill the na by -1
 cleaner.fill_stscd_neg1()
