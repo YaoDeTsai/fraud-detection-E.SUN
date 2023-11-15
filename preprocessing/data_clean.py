@@ -3,20 +3,21 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 
 class DataCleaning:
-    def __init__(self, data):
+    def __init__(self, data, data_info):
         self.data = data
+        self.col_info = data_info
     
-    def fill_stscd_neg1(self: pd.DataFrame):
+    def fill_stscd_neg1(self):
         # fill stscd's na with -1.0
-        self.stscd.fillna(-1.0,inplace=True)
+        self.data.stscd.fillna(-1.0,inplace=True)
 
-    def fill_mcc_neg1(self: pd.DataFrame):
+    def fill_mcc_neg1(self):
         # fill mcc's na with -1.0
-        self.mcc.fillna(-1.0,inplace=True)
+        self.data.mcc.fillna(-1.0,inplace=True)
     
-    def fill_csmcu_or_hcefg_acqic(self: pd.DataFrame, cs_hc: str):
+    def fill_csmcu_or_hcefg_acqic(self, cs_hc: str):
         # find the acqic with the number of csmcu larger than 1000
-        acqic_1000: pd.series = self[self[cs_hc].isna()]["acqic"].value_counts()>1000
+        acqic_1000: pd.series = self.data[self.data[cs_hc].isna()]["acqic"].value_counts()>1000
         acqic_1000: list  = acqic_1000[acqic_1000].index.tolist()
 
         # create the dict of acqic_id and replace value
@@ -24,14 +25,14 @@ class DataCleaning:
 
         # fill the csmcu by for loop
         for acqic_id, fill_value in new_val_byacqic.items():
-            self.loc[self['acqic'] == acqic_id, cs_hc] = self.loc[self['acqic'] == acqic_id, cs_hc].fillna(fill_value)
+            self.data.loc[self.data['acqic'] == acqic_id, cs_hc] = self.data.loc[self.data['acqic'] == acqic_id, cs_hc].fillna(fill_value)
 
         # fill the rest na with the next value of dict
-        self[cs_hc].fillna(list(new_val_byacqic.values())[-1],inplace=True)
+        self.data[cs_hc].fillna(list(new_val_byacqic.values())[-1],inplace=True)
 
-    def proportionXX_target_col_count(self: pd.DataFrame, target_col: str, prop: float):
+    def proportionXX_target_col_count(self, target_col: str, prop: float):
         # calculate the cumulative sum of counts
-        counts = self[target_col].value_counts()
+        counts = self.data[target_col].value_counts()
         cumulative_sum = counts.cumsum()
 
         # find the index values that contribute to 90% of the counts
@@ -39,8 +40,9 @@ class DataCleaning:
         selected_indices = cumulative_sum[cumulative_sum <= threshold].index
         return selected_indices
     
-    def rf_train_test(self: pd.DataFrame, data_info: pd.DataFrame, target_col: str, sample_frac: float,prop: float):
-        train_rf = self
+    def rf_train_test(self, target_col: str, sample_frac: float,prop: float):
+        train_rf = self.data
+        data_info = self.col_info
 
         # identify columns containing string values
         string_columns = train_rf.select_dtypes(include='object').columns
@@ -86,13 +88,13 @@ class DataCleaning:
 
         return X_train_scaled, X_test_scaled, y_train   
 
-    def fill_scity_etymd_byrf(self: pd.DataFrame, data_info: pd.DataFrame, target_col: str, sample_frac: float,prop: float):
+    def fill_scity_etymd_byrf(self, target_col: str, sample_frac: float,prop: float):
         # target_col is the col need to fillna
         # sample_frac is the float number of proportion to sample the train data to use in RF
         # prop is the float number of selecting the train by contribute to XX% of the counts of target col's kind
 
         # output the train and test set
-        X_train_scaled, X_test_scaled, y_train = DataCleaning.rf_train_test(self, data_info, target_col, sample_frac, prop)
+        X_train_scaled, X_test_scaled, y_train = DataCleaning.rf_train_test(self, target_col, sample_frac, prop)
 
         # train a RandomForestClassifier
         rf_classifier = RandomForestClassifier()
@@ -101,6 +103,6 @@ class DataCleaning:
         # use the trained model to predict missing values
         predicted_values = rf_classifier.predict(X_test_scaled)
 
-        self.loc[self[target_col].notna(),target_col] = self.loc[self[target_col].notna(),target_col].astype(str)
+        self.data.loc[self.data[target_col].notna(),target_col] = self.data.loc[self.data[target_col].notna(),target_col].astype(str)
         # fill in the missing values with the predicted values
-        self.loc[self[target_col].isna(),target_col] = predicted_values
+        self.data.loc[self.data[target_col].isna(),target_col] = predicted_values
