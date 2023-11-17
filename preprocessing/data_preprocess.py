@@ -41,12 +41,11 @@ from sklearn.metrics import pairwise_distances
 
 #這邊最後再動
 class DataColumnCreation:
-    def __init__(self,data):
+    def __init__(self, data):
         self.data = data
 
+    
     def create_time(self):
-        #合併同樣cano下重複的chid
-        self.data['chid'] = self.data['cano'].map(self.data.groupby('cano')['chid'].first())
         
         #增加時間變數
         self.data['weekday'] = self.data.locdt % 7
@@ -59,44 +58,93 @@ class DataColumnCreation:
 
         return self.data
     
-    def moving_average(self, data: pd.DataFrame, col_name: str, window_size: int):
-        return data[col_name].rolling(window=window_size).mean().shift(1)
+    def moving_average(self, col_name: str, window_size: int):
+        return self.data[col_name].rolling(window=window_size).mean().shift(1)
 
 
-    def create_column(self, col_name:list, calculation_func):
-        self.data[col_name] = calculation_func(self.data)
-
+    # def create_column(self, col_name:list, calculation_func):
+    #     self.data[col_name] = calculation_func(self.data)
     
-# 將String轉成Int (還有反向)
-class DataStringEdition:
-    def __init__(self, data:pd.DataFrame):
+    # 類別型
+    def latfeature_cuncount(self, column, feat, colname:str, shift:int, start=0):
+        self.data[colname] = -1
+        for t in range(start, max(self.data.locdt)+1):
+            if (t%7==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+            time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
+            sub_data = self.data[time_intervel][['locdt', column, feat]]
+            sub_result = (sub_data.groupby(column)[feat].cumcount()+1)[sub_data.locdt==t].values
+            self.data.loc[self.data['locdt'] == t, colname] = sub_result
+        return self.data
+
+    # 數值型
+    def log1p_feature(self, column):
+        self.data[[f'{x}_log1p' for x in column]] = np.log1p(self.data[column])
+
+    def latfeature_mean(self, column, feat, colname:str, shift:int, start=0):
+        self.data[colname] = -1
+        self.data[colname] = self.data[colname].astype(float)
+        for t in range(start, max(self.data.locdt)+1):
+            if (t%7==0) : print(f'{max(0,t-shift+1)}<=locdt<={t}')
+            time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
+            sub_data = self.data[time_intervel][['locdt', column, feat]]
+            sub_result = (sub_data.groupby(column)[feat].expanding().mean().values)[sub_data.locdt==t]
+            self.data.loc[self.data['locdt'] == t, colname] = sub_result
+        return self.data
+    # def custom_mode(x):
+    #     if (x.nunique() == 1): return x.iloc[0] 
+    #     else: return (x.mode().iloc[0])
+    # def latfeature_mode(data:pd.DataFrame, column, feat, colname:str, shift:int):
+    #     data[colname] = -1
+    #     for t in range(max(data.locdt)+1):
+    #         if (t%8==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+    #         time_intervel = (data.locdt>=(t-shift+1))&(data.locdt<=t)
+    #         sub_data = data[time_intervel][['locdt', column, feat]]
+    #         sub_result = (sub_data.groupby(column)[feat].agg(lambda x: x.mode().iloc[0])).fillna(-1).values
+    #         sub_result = (sub_data.groupby(column)[feat].agg(custom_mode)).fillna(-1).values
+    #         data.loc[data['locdt'] == t, colname] = sub_result
+
+class FeatureEdition:
+    def __init__(self, data, data_info):
         self.data = data
         self.mapping_dict = {}
         self.new_data = None
         self.reversed_mapping_list = []
+        self.data_info = data_info
+
+    def chid_merge(self):
+        #合併同樣cano下不同的chid
+        self.data['chid'] = self.data['cano'].map(self.data.groupby('cano')['chid'].first())
+        return self.data
 
 
-    def str_trans_num(self, data:pd.DataFrame, columns:list[str], reverse = False):
+    def str_trans_num(self, columns:list[str]):
         self.new_data = self.data[columns].copy()  # 創建一個新的 DataFrame，以免影響原始資料
 
-        if not reverse:
-            for x in columns:
-                for i, str_val in enumerate(data[x].unique()):
-                    self.mapping_dict[str_val] = i
-                self.new_data[x] = data[x].map(self.mapping_dict)
-            return self.new_data
-        else:
-            for x in columns:
-                unique_values = self.data[x].unique()
-                self.reversed_mapping_list.append({i: v for i, v in enumerate(unique_values)})
+        for x in columns:
+            for i, str_val in enumerate(self.data[x].unique()):
+                self.mapping_dict[str_val] = i
+            self.new_data[x] = self.data[x].map(self.mapping_dict)
 
-            return self.reversed_mapping_list
-        
-    def num_trans_str(self, replaced_cols, reversed_mapping_list):
-        self.new_data = self.data[replaced_cols].copy()  # 創建一個新的 DataFrame，以免影響原始資料
-        
-        for i, x in enumerate(replaced_cols):
-            reversed_mapping = reversed_mapping_list[i]
-            self.new_data[x] = self.data[x].map(reversed_mapping)
+    def trans_stocn(self):
+        stocn_most = (self.data.stocn.value_counts())[(self.data.stocn.value_counts()>10000)].index
+        self.data['new_stocn'] = np.where(self.data['stocn'].isin(stocn_most),self.data['stocn'], -1)
 
-        return self.new_data
+    def process_tw_scity(self, proportion = 0.9):
+    # 先抓台灣training資料
+        train_tw = self.data[(self.data.stocn==0)&(self.data.label.isin([0,1]))] 
+        cum_fraud_tw = ((train_tw.groupby('scity')['label'].sum())/sum(train_tw.label)).sort_values(ascending=False).cumsum()
+        # 取累積比例 > proportion 的 index
+        twcity_others = set((self.data[(self.data.stocn==0)].scity.unique())).difference((cum_fraud_tw[cum_fraud_tw<proportion].index)) #TW所有city - TW熱門city
+        self.data['new_scity'] = self.data['scity'].copy()
+        condition = (self.data.stocn==0) & (self.data.scity.isin(twcity_others))
+        self.data.loc[condition, 'new_scity'] = -1
+
+    def trans_cata2objcet(self, new_feat_trans2obj):
+        cat_cols = self.data_info[self.data_info['資料格式']=='類別型']['訓練資料欄位名稱'].iloc[:-2]
+        new_feat_trans2obj = ['ecfg_3dsmk','new_stocn','new_scity','weekday']
+
+        self.data[cat_cols] = self.data[cat_cols].astype('object')
+        self.data[new_feat_trans2obj] = self.data[new_feat_trans2obj].astype('object')
+        return self.data
+
+
