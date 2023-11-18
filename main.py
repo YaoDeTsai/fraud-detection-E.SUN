@@ -14,6 +14,7 @@ public = pd.read_csv("datasets/public_processed.csv")
 df = pd.concat([train,public])
 data_info = pd.read_excel("datasets/31_資料欄位說明.xlsx")
 # df = pd.read_csv("datasets/df_fill.csv")
+# df.fillna(-1)
 
 # missing data cleaning class
 cleaner = DataCleaning(df, data_info)
@@ -39,24 +40,26 @@ cleaner.fill_scity_etymd_byrf("stocn", 0.3, 1.0)
 creat_feat  = col_create(df)
 trans_feat  = FeatureEdition( df, data_info)
 
-trans_feat.str_trans_num(columns=['chid', 'cano', 'mchno', 'acqic'])
+
+
+df = trans_feat.str_trans_num(columns=['chid', 'cano', 'mchno', 'acqic'])
 df[['etymd','stocn','scity']] = df[['etymd','stocn','scity']].astype(float)
-df['label'] = df.label.fillna(-1)
-df['label'] = df.label.astype(int)
+df['label'] = df.label.fillna(-1).astype(int)
 df = df.sort_values(['locdt','loctm','chid','cano'])
 
 # 把stocn的冷門國家換成-1(others)
-trans_feat.trans_stocn()
+df = trans_feat.trans_stocn()
 # 減少scity數量(台灣取累計盜刷比例>0.9的city換成other(-1))
-trans_feat.process_tw_scity()
+df = trans_feat.process_tw_scity()
 #chid_merge
-trans_feat.chid_merge()
+df = trans_feat.chid_merge()
+
 
 
 ## 加變數
 df['diff_locdt'] = df.groupby('cano')['locdt'].diff().fillna(-1)
 df['ecfg_3dsmk'] = df['ecfg'] + df['flg_3dsmk']  # 0是實體交易，1是線上+沒3D驗證，2是線上+3D驗證
-creat_feat.create_time() #日時分秒
+df = creat_feat.create_time() #日時分秒
 
 # chid、cano分組近7天累積次數
 df = creat_feat.latfeature_cumcount(column='cano',feat='txkey',colname='cano_cumcount7',shift=7)

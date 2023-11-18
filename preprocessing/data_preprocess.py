@@ -66,7 +66,7 @@ class DataColumnCreation:
     #     self.data[col_name] = calculation_func(self.data)
     
     # 類別型
-    def latfeature_cuncount(self, column, feat, colname:str, shift:int, start=0):
+    def latfeature_cumcount(self, column, feat, colname:str, shift:int, start=0):
         self.data[colname] = -1
         for t in range(start, max(self.data.locdt)+1):
             if (t%7==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
@@ -79,6 +79,7 @@ class DataColumnCreation:
     # 數值型
     def log1p_feature(self, column):
         self.data[[f'{x}_log1p' for x in column]] = np.log1p(self.data[column])
+        return self.data
 
     def latfeature_mean(self, column, feat, colname:str, shift:int, start=0):
         self.data[colname] = -1
@@ -107,7 +108,7 @@ class FeatureEdition:
     def __init__(self, data, data_info):
         self.data = data
         self.mapping_dict = {}
-        self.new_data = None
+        # self.new_data = None
         self.reversed_mapping_list = []
         self.data_info = data_info
 
@@ -118,16 +119,19 @@ class FeatureEdition:
 
 
     def str_trans_num(self, columns:list[str]):
-        self.new_data = self.data[columns].copy()  # 創建一個新的 DataFrame，以免影響原始資料
+        self.new_data = self.data.copy()  # 創建一個新的 DataFrame，以免影響原始資料
 
         for x in columns:
             for i, str_val in enumerate(self.data[x].unique()):
                 self.mapping_dict[str_val] = i
             self.new_data[x] = self.data[x].map(self.mapping_dict)
+        return self.new_data
 
+    #把冷門國家換成-1
     def trans_stocn(self):
         stocn_most = (self.data.stocn.value_counts())[(self.data.stocn.value_counts()>10000)].index
         self.data['new_stocn'] = np.where(self.data['stocn'].isin(stocn_most),self.data['stocn'], -1)
+        return self.data
 
     def process_tw_scity(self, proportion = 0.9):
     # 先抓台灣training資料
@@ -138,6 +142,7 @@ class FeatureEdition:
         self.data['new_scity'] = self.data['scity'].copy()
         condition = (self.data.stocn==0) & (self.data.scity.isin(twcity_others))
         self.data.loc[condition, 'new_scity'] = -1
+        return self.data
 
     def trans_cata2objcet(self, new_feat_trans2obj):
         cat_cols = self.data_info[self.data_info['資料格式']=='類別型']['訓練資料欄位名稱'].iloc[:-2]
