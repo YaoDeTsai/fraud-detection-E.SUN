@@ -42,6 +42,7 @@ trans_feat  = FeatureEdition( df, data_info)
 
 trans_feat.str_trans_num(columns=['chid', 'cano', 'mchno', 'acqic'])
 df[['etymd','stocn','scity']] = df[['etymd','stocn','scity']].astype(float)
+df['label'] = df.label.fillna(-1)
 df['label'] = df.label.astype(int)
 df = df.sort_values(['locdt','loctm','chid','cano'])
 
@@ -87,3 +88,4 @@ new_public.drop(['loctm','stocn','scity','flg_3dsmk','m_loctm','s_loctm','label'
 
 new_train.to_csv("datasets/new_train.csv",index=False)
 new_public.to_csv("datasets/new_public.csv",index=False)
+
