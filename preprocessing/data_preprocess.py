@@ -67,7 +67,8 @@ class DataColumnCreation:
     
     # 類別型
     def latfeature_cumcount(self, column, feat, colname:str, shift:int, start=0):
-        self.data[colname] = -1
+        if  colname not in self.data.columns:
+            self.data[colname] = -1.0
         for t in range(start, max(self.data.locdt)+1):
             if (t%7==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
             time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
@@ -80,14 +81,31 @@ class DataColumnCreation:
             self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
         return self.data
 
+
+
+    def latfeature_nunique(self, column, feat, colname:str, shift:int, start=0):
+        if  colname not in self.data.columns:
+            self.data[colname] = -1.0        
+        for t in range(start, max(self.data.locdt)+1):
+            if (t%7==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+            time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
+            # sub_data = self.data[time_intervel][['locdt', column, feat]]
+            # sub_result = (sub_data.groupby(column)[feat].cumcount()+1)[sub_data.locdt==t].values
+            # self.data.loc[self.data['locdt'] == t, colname] = sub_result
+            sub_data = self.data[time_intervel][['locdt', column, feat, colname]]
+            grouped_cumcount = (sub_data.groupby(column)[feat].nunique())
+            sub_data[colname][grouped_cumcount.index] = grouped_cumcount.values
+            self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
+        return self.data
+
     # 數值型
     def log1p_feature(self, column):
         self.data[[f'{x}_log1p' for x in column]] = np.log1p(self.data[column])
         return self.data
 
     def latfeature_mean(self, column, feat, colname:str, shift:int, start=0):
-        self.data[colname] = -1
-        self.data[colname] = self.data[colname].astype(float)
+        if  colname not in self.data.columns:
+            self.data[colname] = -1.0
         for t in range(start, max(self.data.locdt)+1):
             if (t%7==0) : print(f'{max(0,t-shift+1)}<=locdt<={t}')
             time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
@@ -96,19 +114,19 @@ class DataColumnCreation:
             sub_data[colname][grouped_mean.index] = grouped_mean.values
             self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
         return self.data
-    # def custom_mode(x):
-    #     if (x.nunique() == 1): return x.iloc[0] 
-    #     else: return (x.mode().iloc[0])
-    # def latfeature_mode(data:pd.DataFrame, column, feat, colname:str, shift:int):
-    #     data[colname] = -1
-    #     for t in range(max(data.locdt)+1):
-    #         if (t%8==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
-    #         time_intervel = (data.locdt>=(t-shift+1))&(data.locdt<=t)
-    #         sub_data = data[time_intervel][['locdt', column, feat]]
-    #         sub_result = (sub_data.groupby(column)[feat].agg(lambda x: x.mode().iloc[0])).fillna(-1).values
-    #         sub_result = (sub_data.groupby(column)[feat].agg(custom_mode)).fillna(-1).values
-    #         data.loc[data['locdt'] == t, colname] = sub_result
 
+    def latfeature_mode(self, column, feat, colname:str, shift:int):
+        if  colname not in self.data.columns:
+            self.data[colname] = -1.0        
+        for t in range(max(self.data.locdt)+1):
+            if (t%8==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+            time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
+            sub_data = self.data[time_intervel][['locdt', column, feat, colname]]
+            grouped_mode = sub_data[[column, feat]].groupby(column)[feat].agg(lambda x: x.mode().iloc[0]).reset_index(level=0, drop=True)
+            sub_data[colname][grouped_mode.index] = grouped_mode.values
+            self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
+        return self.data
+    
 class FeatureEdition:
     def __init__(self, data, data_info):
         self.data = data

@@ -129,23 +129,42 @@ cumcount_merge_idx = cano_cumcounts[cano_cumcounts/len(df[df.label==1])>=0.97].i
 df.loc[df.cano_cumcount7>=cumcount_merge_idx,['cano_cumcount7']] = cumcount_merge_idx
 df.loc[df.chid_cumcount7>=cumcount_merge_idx,['chid_cumcount7']] = cumcount_merge_idx
 
-
-
 # # Scity處理
-# city_total = df[df['label'] != -1].groupby(['new_stocn', 'new_scity']).agg(n_labels=('n_labels', 'sum'),
-#                                                                        total_transactions=('txkey', 'count')).reset_index()
-# city_total['label_ratio'] = city_total['n_labels'] / city_total['total_transactions']
+city_total = df[df['label'] != -1].groupby(['new_stocn', 'new_scity']).agg(n_labels=('label', 'sum'),
+                                                                       total_transactions=('txkey', 'count')).reset_index()
+city_total['label_ratio'] = city_total['n_labels'] / city_total['total_transactions']
 # # 按照新建的 'n_labels' 欄位降序排列，取前20名
 # city_total= city_total.rename(columns={'scity': 'new_scity'})
-# top_cities = city_total.sort_values(by='n_labels', ascending=False)
-# top_cities['cumsum_label'] = top_cities['n_labels'].cumsum() / sum(top_cities['n_labels'])
-# top_cities['temp'] = top_cities['n_labels'] + top_cities['label_ratio']
-# top_cities = top_cities.sort_values('temp',ascending=False)
-# top_cities['rank_scity'] = top_cities['temp'].rank(method='dense',ascending=False)
-# df = pd.merge(df, top_cities[['new_stocn', 'new_scity' , 'label_ratio', 'rank_scity']], on=['new_stocn', 'new_scity'], how='left')
-# df.columns
+top_cities = city_total.sort_values(by='n_labels', ascending=False)
+top_cities['cumsum_label'] = top_cities['n_labels'].cumsum() / sum(top_cities['n_labels'])
+top_cities['temp'] = top_cities['n_labels'] + top_cities['label_ratio']
+top_cities = top_cities.sort_values('temp',ascending=False)
+top_cities['rank_scity'] = top_cities['temp'].rank(method='dense',ascending=False)
+A = top_cities[(top_cities.total_transactions<10)]
+top_cities.loc[(top_cities.total_transactions<10),'label_ratio'] = A['n_labels'].sum() / A['total_transactions'].sum()
+df = pd.merge(df, top_cities[['new_stocn', 'new_scity' , 'label_ratio', 'rank_scity']], on=['new_stocn', 'new_scity'], how='left')
+# df[(df.label!=-1)&(df.rank_scity <= 100)].label.sum()/32029
+df.loc[(df['rank_scity']>=100),['rank_scity'] ]= 100
 
 # # del df['label_ratio_x'],df['rank_scity_x'],df['label_ratio_y'],df['rank_scity_y']
+
+
+def latfeature_mode(data, column, feat, colname:str, shift:int):
+    if  colname not in  data.columns:
+         data[colname] = -1.0        
+    for t in range(max( data.locdt)+1):
+        if (t%8==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+        time_intervel = ( data.locdt>=(t-shift+1))&( data.locdt<=t)
+        sub_data =  data[time_intervel][['locdt', column, feat, colname]]
+        grouped_mode = sub_data[[column, feat]].groupby(column)[feat].agg(lambda x: x.mode().iloc[0]).reset_index(level=0, drop=True)
+        common_index = sub_data[colname].index.intersection(grouped_mode.index)
+        sub_data.loc[common_index, colname] = grouped_mode.loc[common_index].values
+        # sub_data[colname][grouped_mode.index] = grouped_mode.values
+        data.loc[ data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
+    return  data
+
+A = latfeature_mode(df,'cano',feat='mcc',colname='mcc_mode_cano7',shift=7)
+
 
 # label_ratio_df 跟nlabels_ratio 有na
 columns_to_fill = df.columns[(df.isna().sum()!=0)]
