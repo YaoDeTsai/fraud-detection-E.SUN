@@ -54,12 +54,12 @@ df = trans_feat.process_tw_scity()
 #chid_merge
 df = trans_feat.chid_merge()
 
-
-
 ## 加變數
-df['diff_locdt'] = df.groupby('cano')['locdt'].diff().fillna(-1)
+df['time'] = df['locdt'] + df['hrs_loctm']/24
+df['diff_time'] = df.groupby('cano')['time'].diff().fillna(-1)
 df['ecfg_3dsmk'] = df['ecfg'] + df['flg_3dsmk']  # 0是實體交易，1是線上+沒3D驗證，2是線上+3D驗證
 df = creat_feat.create_time() #日時分秒
+
 
 # chid、cano分組近7天累積次數
 df = creat_feat.latfeature_cumcount(column='cano',feat='txkey',colname='cano_cumcount7',shift=7)
@@ -77,11 +77,85 @@ df['flam1conam_diff_log1p'] = df['conam_log1p'] - df['flam1_log1p']
 df['flam1_diff_avg7log1p_cano'] = df['flam1_log1p'] - df['flam1avg7_log1p_cano']
 df['flam1_diff_avg7log1p_mcc'] = df['flam1_log1p'] - df['flam1avg7_log1p_mcc']
 
+# MCC特徵，我現在不敢亂動
+def latfeature_mcc(data, shift:int, start=4):
+    if 'label_ratio' not in data.columns:
+        data[['label_ratio','nlabels_ratio']] = -1.0
+    if (start - shift)<0 : start = shift
+    for t in range(start, max(data.locdt)+1):
+        if (start - shift)<0 : 
+            print(t) 
+            continue 
+        if (t%15==14) : print(f't:{t} Range:{max(0,t-shift)}<=locdt<={t-1}')
+        k = t
+        if t>=(data[data.label==-1].locdt.min()) : t = (data[data.label!=-1].locdt.max()+1)
+        time_intervel = (data.locdt>=(t-shift))&(data.locdt<=t-1)
+        sub_data = data[time_intervel]
+        if sub_data.empty: continue
+        stocn_mcc_stats = (sub_data[sub_data.label!=-1].groupby(['new_stocn', 'mcc']).
+                            agg(n_labels=('label', 'sum'), mcc_total=('label', 'count')).reset_index())
+        # 计算比例
+        stocn_mcc_stats['label_ratio'] = stocn_mcc_stats['n_labels'] / stocn_mcc_stats['mcc_total']
+        stocn_mcc_stats['nlabels_ratio'] = stocn_mcc_stats['n_labels'] / stocn_mcc_stats.groupby('new_stocn')['n_labels'].transform('sum')
+        result_data =  pd.merge(data[data['locdt'] == k][['new_stocn', 'mcc']], 
+                                stocn_mcc_stats[['new_stocn', 'mcc', 'label_ratio', 'nlabels_ratio']], on=['new_stocn', 'mcc'],
+                                    how='left')
+        data.loc[data['locdt'] == k, ['label_ratio', 'nlabels_ratio']] = result_data[['label_ratio', 'nlabels_ratio']].values
 
+    data = data.fillna(-1.0)
+    data_stocn_mcc = (data[data.label!=-1].groupby(['new_stocn', 'mcc']).agg(n_labels=('label', 'sum'), mcc_total=('label', 'count')).reset_index())
+    data_stocn_mcc['label_ratio'] = data_stocn_mcc['n_labels'] / data_stocn_mcc['mcc_total']
+    data_stocn_mcc['nlabels_ratio'] = data_stocn_mcc['n_labels'] / data_stocn_mcc.groupby('new_stocn')['n_labels'].transform('sum')
+
+    left_missingdata =  pd.merge(data[(data.nlabels_ratio==-1)&(data.label_ratio==-1)][['new_stocn', 'mcc']], 
+                                data_stocn_mcc[['new_stocn', 'mcc', 'label_ratio', 'nlabels_ratio']], on=['new_stocn', 'mcc'],
+                                    how='left')
+    data.loc[(data['nlabels_ratio'] == -1) & (data['label_ratio'] == -1), ['label_ratio', 'nlabels_ratio']] = left_missingdata[['label_ratio', 'nlabels_ratio']].values
+    data.loc[(data['nlabels_ratio'] == -1) & (data['label_ratio'] != -1), ['label_ratio', 'nlabels_ratio']] = 0
+
+    return data
+
+df = latfeature_mcc(df, shift=4,start =0)
+
+#當天交易次數
+df['transactions_count'] = df.groupby(['cano', 'locdt'])['txkey'].transform('count')
+df['scity_count'] = df.groupby(['cano', 'locdt'])['scity'].transform('nunique')
+df['mcc_count'] = df.groupby(['cano', 'locdt'])['mcc'].transform('nunique')
+df['stocn_count'] = df.groupby(['cano', 'locdt'])['stocn'].transform('nunique')
+
+#cano_cumcounts處理 # 0.97以上的個數合併
+cano_cumcounts = df[df.label==1].groupby('cano_cumcount7')['label'].sum().cumsum()
+cumcount_merge_idx = cano_cumcounts[cano_cumcounts/len(df[df.label==1])>=0.97].idxmin()
+df.loc[df.cano_cumcount7>=cumcount_merge_idx,['cano_cumcount7']] = cumcount_merge_idx
+df.loc[df.chid_cumcount7>=cumcount_merge_idx,['chid_cumcount7']] = cumcount_merge_idx
+
+
+
+# # Scity處理
+# city_total = df[df['label'] != -1].groupby(['new_stocn', 'new_scity']).agg(n_labels=('n_labels', 'sum'),
+#                                                                        total_transactions=('txkey', 'count')).reset_index()
+# city_total['label_ratio'] = city_total['n_labels'] / city_total['total_transactions']
+# # 按照新建的 'n_labels' 欄位降序排列，取前20名
+# city_total= city_total.rename(columns={'scity': 'new_scity'})
+# top_cities = city_total.sort_values(by='n_labels', ascending=False)
+# top_cities['cumsum_label'] = top_cities['n_labels'].cumsum() / sum(top_cities['n_labels'])
+# top_cities['temp'] = top_cities['n_labels'] + top_cities['label_ratio']
+# top_cities = top_cities.sort_values('temp',ascending=False)
+# top_cities['rank_scity'] = top_cities['temp'].rank(method='dense',ascending=False)
+# df = pd.merge(df, top_cities[['new_stocn', 'new_scity' , 'label_ratio', 'rank_scity']], on=['new_stocn', 'new_scity'], how='left')
+# df.columns
+
+# # del df['label_ratio_x'],df['rank_scity_x'],df['label_ratio_y'],df['rank_scity_y']
+
+# label_ratio_df 跟nlabels_ratio 有na
+columns_to_fill = df.columns[(df.isna().sum()!=0)]
+df[columns_to_fill] = df[columns_to_fill].fillna(df[columns_to_fill].mean())
 # df.to_csv("datasets/df_fill.csv",index=False)
 # 將指定的類別變數轉換為物件型別
 new_train  = train[['txkey']].merge(df, how='left', on='txkey')
 new_public = public[['txkey']].merge(df, how='left', on='txkey')
+
+
 
 new_train.drop(['loctm','stocn','scity','flg_3dsmk','m_loctm','s_loctm'], axis=1,inplace=True)
 new_public.drop(['loctm','stocn','scity','flg_3dsmk','m_loctm','s_loctm','label'], axis=1,inplace=True)

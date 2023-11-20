@@ -71,9 +71,13 @@ class DataColumnCreation:
         for t in range(start, max(self.data.locdt)+1):
             if (t%7==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
             time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
-            sub_data = self.data[time_intervel][['locdt', column, feat]]
-            sub_result = (sub_data.groupby(column)[feat].cumcount()+1)[sub_data.locdt==t].values
-            self.data.loc[self.data['locdt'] == t, colname] = sub_result
+            # sub_data = self.data[time_intervel][['locdt', column, feat]]
+            # sub_result = (sub_data.groupby(column)[feat].cumcount()+1)[sub_data.locdt==t].values
+            # self.data.loc[self.data['locdt'] == t, colname] = sub_result
+            sub_data = self.data[time_intervel][['locdt', column, feat, colname]]
+            grouped_cumcount = (sub_data.groupby(column)[feat].cumcount()+1)
+            sub_data[colname][grouped_cumcount.index] = grouped_cumcount.values
+            self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
         return self.data
 
     # 數值型
@@ -87,9 +91,10 @@ class DataColumnCreation:
         for t in range(start, max(self.data.locdt)+1):
             if (t%7==0) : print(f'{max(0,t-shift+1)}<=locdt<={t}')
             time_intervel = (self.data.locdt>=(t-shift+1))&(self.data.locdt<=t)
-            sub_data = self.data[time_intervel][['locdt', column, feat]]
-            sub_result = (sub_data.groupby(column)[feat].expanding().mean().values)[sub_data.locdt==t]
-            self.data.loc[self.data['locdt'] == t, colname] = sub_result
+            sub_data = self.data[time_intervel][['locdt', column, feat, colname]]
+            grouped_mean = sub_data[[column, feat]].groupby(column)[feat].expanding().mean().reset_index(level=0, drop=True)
+            sub_data[colname][grouped_mean.index] = grouped_mean.values
+            self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
         return self.data
     # def custom_mode(x):
     #     if (x.nunique() == 1): return x.iloc[0] 

@@ -15,9 +15,9 @@ from preprocessing.data_preprocess import DataColumnCreation as col_create
 from preprocessing.data_preprocess import FeatureEdition
 from imblearn.pipeline import Pipeline
 import lightgbm as lgb
+from sklearn.ensemble import RandomForestClassifier
+
 import os
-from keras.layers import Input, Dense
-from keras.models import Model
 #Visualization
 import matplotlib.pyplot as plt
 #ENN
@@ -64,26 +64,6 @@ X = data_abroad.drop(['time','label'], axis=1)
 X = X.drop(drop_column2, axis=1)
 y = data_abroad['label']
 
-###################################################################################
-#Auto-Encoder
-input_dim = X.shape[1]
-input_layer = Input(shape=(input_dim,))
-encoded = Dense(128, activation='relu')(input_layer)
-decoded = Dense(input_dim, activation='sigmoid')(encoded)
-
-autoencoder_model = Model(inputs=input_layer, outputs=decoded)
-autoencoder_model.compile(optimizer='adam', loss='mse')
-
-# 分割數據集
-X_train, X_valid = train_test_split(X, test_size=0.2, random_state=42)
-
-# 訓練 Autoencoder
-autoencoder_model.fit(X_train, X_train, epochs=10, batch_size=64, shuffle=True)
-
-encoded_train_features = autoencoder_model.predict(X_train)
-encoded_valid_features = autoencoder_model.predict(X_valid)
-
-###################################################################################
 #Model
 # 定义LightGBM模型
 lgb_model = lgb.LGBMClassifier(objective='binary', random_state=41)
@@ -126,11 +106,6 @@ param_dist = {
 undersampler = RandomUnderSampler(sampling_strategy=0.15, random_state=42)
 pipeline = Pipeline(steps=[('undersampler', undersampler), ('classifier', lgb_model)])
 random_search = RandomizedSearchCV(pipeline, param_distributions=param_dist, n_iter=20, scoring='f1', cv=tscv, verbose=1, n_jobs=-1, random_state=42)
-
-#Autoencoder
-# 使用Autoencoder提取的特徵進行訓練
-random_search.fit(encoded_train_features, y_train)
-
 # 执行Random Search
 random_search.fit(X, y)
 best_model = random_search.best_estimator_
@@ -152,8 +127,43 @@ plt.xlabel('Importance')
 plt.title('Feature Importance')
 plt.show()
 
+#Random Forest
+# 定義你的模型，這裡以Random Forest為例
+model = RandomForestClassifier(random_state=42)
 
-#Prediction
+# 定義超參數的範圍
+param_dist = {
+    'n_estimators': randint(50, 200),
+    'max_depth': randint(5, 20),
+    'min_samples_split': randint(2, 10),
+    'min_samples_leaf': randint(1, 10),
+    'bootstrap': [True, False]
+}
+
+# 創建RandomizedSearchCV對象
+random_search = RandomizedSearchCV(
+    model,
+    param_distributions=param_dist,
+    n_iter=20,  # 設定搜尋的次數
+    scoring='f1',  # 選擇合適的評估指標
+    cv=tscv,  # 交叉驗證的折數
+    verbose=1,
+    n_jobs=-1,  # 使用所有可用的CPU核心進行搜尋
+    random_state=42
+)
+
+# 執行Randomized Search
+random_search.fit(X, y)
+
+# 獲取最佳模型
+best_model = random_search.best_estimator_
+
+# 輸出最佳參數
+print("Best parameters found: ", random_search.best_params_)
+print("Best F1-score found: {:.4f}".format(random_search.best_score_))
+
+
+########################Prediction
 public = pd.read_csv('datasets/new_public.csv')
 txkey_public = public['txkey']
 
