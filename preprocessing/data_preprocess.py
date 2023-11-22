@@ -19,27 +19,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import pairwise_distances
 
-# public  = pd.read_csv('./31_dataset_1st_training_public testing/dataset_1st/public_processed.csv')
-# train  = pd.read_csv('./31_dataset_1st_training_public testing/dataset_1st/training.csv')
-
-# df = pd.concat([public,train])
-# df = df.fillna(-1)
-# df.head(10)
-
-# del public, train
-# #把chid換成沒有重複的chid
-# df['chid'] = df['cano'].map(df.groupby('cano')['chid'].first())
-# #增加時間變數
-# df['weekday'] = df.locdt % 7
-# df['h_loctm'] = df.loctm // 10000
-# df['m_loctm'] = (df.loctm % 10000) //100
-# df['s_loctm'] = df.loctm % 100
-
-
-
-
-
-#這邊最後再動
 class DataColumnCreation:
     def __init__(self, data):
         self.data = data
@@ -127,6 +106,67 @@ class DataColumnCreation:
             self.data.loc[self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
         return self.data
     
+    def mcc_count(self,column_name:str , islabel=False):
+        data2 = self.data
+        if islabel:  
+            data2 = data2[data2.label==1]
+        mcc_counts = data2.groupby(['new_stocn', 'mcc']).size().reset_index(name='count')
+        mcc_counts[column_name] = mcc_counts.groupby('new_stocn')['count'].rank(ascending=False)
+        self.data = pd.merge(self.data,mcc_counts[['new_stocn','mcc',column_name]], on=['new_stocn', 'mcc'], how='left')
+        return self.data
+
+    def latfeature_mode(self, column, feat, colname:str, shift:int):
+        if  colname not in  self.data.columns:
+            self.data[colname] = -1.0        
+        for t in range(max( self.data.locdt)+1):
+            if (t%8==0):print(f'{max(0,t-shift+1)}<=locdt<={t}')
+            time_intervel = ( self.data.locdt>=(t-shift+1))&( self.data.locdt<=t)
+            sub_data =  self.data[time_intervel][['locdt', column, feat, colname]]
+            grouped_mode = sub_data[[column, feat]].groupby(column)[feat].agg(lambda x: x.mode().iloc[0]).reset_index(level=0, drop=True)
+            common_index = sub_data[colname].index.intersection(grouped_mode.index)
+            sub_data.loc[common_index, colname] = grouped_mode.loc[common_index].values
+            # sub_data[colname][grouped_mode.index] = grouped_mode.values
+            self.data.loc[ self.data['locdt'] == t, colname] = sub_data[sub_data.locdt == t][colname]
+        return  self.data
+    
+    def latfeature_mcc(self, shift:int, start=4):
+        if 'label_ratio_mcc' not in self.data.columns:
+            self.data[['label_ratio_mcc','nlabels_ratio']] = -1.0
+        if (start - shift)<0 : start = shift
+        for t in range(start, max(self.data.locdt)+1):
+            if (start - shift)<0 : 
+                print(t) 
+                continue 
+            if (t%15==14) : print(f't:{t} Range:{max(0,t-shift)}<=locdt<={t-1}')
+            k = t
+            if t>=(self.data[self.data.label==-1].locdt.min()) : t = (self.data[self.data.label!=-1].locdt.max()+1)
+            time_intervel = (self.data.locdt>=(t-shift))&(self.data.locdt<=t-1)
+            sub_data = self.data[time_intervel]
+            if sub_data.empty: continue
+            stocn_mcc_stats = (sub_data[sub_data.label!=-1].groupby(['new_stocn', 'mcc']).
+                                agg(n_labels=('label', 'sum'), mcc_total=('label', 'count')).reset_index())
+            # 计算比例
+            stocn_mcc_stats['label_ratio_mcc'] = stocn_mcc_stats['n_labels'] / stocn_mcc_stats['mcc_total']
+            stocn_mcc_stats['nlabels_ratio'] = stocn_mcc_stats['n_labels'] / stocn_mcc_stats.groupby('new_stocn')['n_labels'].transform('sum')
+            result_data =  pd.merge(self.data[self.data['locdt'] == k][['new_stocn', 'mcc']], 
+                                    stocn_mcc_stats[['new_stocn', 'mcc', 'label_ratio_mcc', 'nlabels_ratio']], on=['new_stocn', 'mcc'],
+                                        how='left')
+            self.data.loc[self.data['locdt'] == k, ['label_ratio_mcc', 'nlabels_ratio']] = result_data[['label_ratio_mcc', 'nlabels_ratio']].values
+
+        self.data = self.data.fillna(-1.0)
+        data_stocn_mcc = (self.data[self.data.label!=-1].groupby(['new_stocn', 'mcc']).agg(n_labels=('label', 'sum'), mcc_total=('label', 'count')).reset_index())
+        data_stocn_mcc['label_ratio_mcc'] = data_stocn_mcc['n_labels'] / data_stocn_mcc['mcc_total']
+        data_stocn_mcc['nlabels_ratio'] = data_stocn_mcc['n_labels'] / data_stocn_mcc.groupby('new_stocn')['n_labels'].transform('sum')
+
+        left_missingdata =  pd.merge(self.data[(self.data.nlabels_ratio==-1)&(self.data.label_ratio_mcc==-1)][['new_stocn', 'mcc']], 
+                                    data_stocn_mcc[['new_stocn', 'mcc', 'label_ratio_mcc', 'nlabels_ratio']], on=['new_stocn', 'mcc'],
+                                        how='left')
+        self.data.loc[(self.data['nlabels_ratio'] == -1) & (self.data['label_ratio_mcc'] == -1), ['label_ratio_mcc', 'nlabels_ratio']] = left_missingdata[['label_ratio_mcc', 'nlabels_ratio']].values
+        self.data.loc[(self.data['nlabels_ratio'] == -1) & (self.data['label_ratio_mcc'] != -1), ['label_ratio_mcc', 'nlabels_ratio']] = 0
+
+        return self.data
+
+    
 class FeatureEdition:
     def __init__(self, data, data_info):
         self.data = data
@@ -175,4 +215,14 @@ class FeatureEdition:
         self.data[new_feat_trans2obj] = self.data[new_feat_trans2obj].astype('object')
         return self.data
 
-
+class prediction:
+    # def __init__():
+        
+    def output_result(data, model, drop_column):
+        txkey_public = data['txkey']
+        data.drop(drop_column,axis=1,inplace=True)
+        data.drop('time',axis=1,inplace=True)
+        new_predictions = model.predict(data)
+        result_df = pd.DataFrame({'txkey': txkey_public, 'pred': new_predictions})
+        result_df['txkey'] = result_df['txkey'].astype(str)
+        return result_df
